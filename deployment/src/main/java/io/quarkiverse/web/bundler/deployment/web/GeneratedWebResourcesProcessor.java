@@ -15,6 +15,8 @@ import java.util.stream.Collectors;
 import org.jboss.logging.Logger;
 
 import io.quarkiverse.web.bundler.deployment.WebBundlerConfig;
+import io.quarkiverse.web.bundler.deployment.items.BundleWebAsset;
+import io.quarkiverse.web.bundler.deployment.items.EntryPointBuildItem;
 import io.quarkiverse.web.bundler.deployment.items.ReadyForBundlingBuildItem;
 import io.quarkiverse.web.bundler.deployment.items.WebBundlerTargetDirBuildItem;
 import io.quarkiverse.web.bundler.deployment.util.PathUtils;
@@ -23,10 +25,7 @@ import io.quarkus.deployment.IsDevelopment;
 import io.quarkus.deployment.annotations.BuildProducer;
 import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.annotations.Record;
-import io.quarkus.deployment.builditem.GeneratedResourceBuildItem;
-import io.quarkus.deployment.builditem.LaunchModeBuildItem;
-import io.quarkus.deployment.builditem.LiveReloadBuildItem;
-import io.quarkus.deployment.builditem.ShutdownContextBuildItem;
+import io.quarkus.deployment.builditem.*;
 import io.quarkus.deployment.builditem.nativeimage.NativeImageResourceBuildItem;
 import io.quarkus.runtime.LaunchMode;
 import io.quarkus.vertx.http.deployment.RouteBuildItem;
@@ -132,14 +131,31 @@ public class GeneratedWebResourcesProcessor {
             WebBundlerResourceRecorder recorder,
             ReadyForBundlingBuildItem readyForBundling,
             List<GeneratedWebResourceBuildItem> staticResources,
+            List<HotDeploymentWatchedFileBuildItem> watchedFiles,
+            List<EntryPointBuildItem> entryPoints,
             ShutdownContextBuildItem shutdownContext,
             BuildProducer<RouteBuildItem> routes) {
         if (config.browserLiveReload() && readyForBundling != null) {
+            Map<String, String> copyMap = new HashMap<>();
+
+            for (EntryPointBuildItem entryPoint : entryPoints) {
+                for (BundleWebAsset webAsset : entryPoint.getWebAssets()) {
+                    boolean shouldCopy = watchedFiles.stream()
+                            .anyMatch(f -> !f.isRestartNeeded() && webAsset.resourceName().equals(f.getLocation()));
+                    if (shouldCopy) {
+                        String destination = webAsset.pathFromWebRoot(config.webRoot());
+                        final Path scriptPath = targetDir.webBundler().resolve(destination);
+                        copyMap.put(webAsset.srcFilePath().orElseThrow().toAbsolutePath().toString(),
+                                scriptPath.toAbsolutePath().toString());
+                    }
+                }
+            }
+
             routes.produce(RouteBuildItem.builder().route(WEB_BUNDLER_LIVE_RELOAD_PATH)
                     .handler(recorder.createChangeEventHandler(targetDir.dist().toAbsolutePath().toString(),
                             staticResources.stream().map(GeneratedWebResourceBuildItem::publicPath)
                                     .collect(Collectors.toSet()),
-                            shutdownContext))
+                            copyMap, shutdownContext))
                     .build());
         }
     }

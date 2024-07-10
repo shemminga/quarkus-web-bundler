@@ -1,5 +1,6 @@
 package io.quarkiverse.web.bundler.runtime;
 
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -40,13 +41,11 @@ public class WebBundlerResourceRecorder {
                 webResources);
     }
 
-    public Handler<RoutingContext> createChangeEventHandler(final String webResourcesDirectory,
-            final Set<String> webResources,
-            ShutdownContext shutdownContext) {
+    public Handler<RoutingContext> createChangeEventHandler(final String webResourcesDirectory, final Set<String> webResources,
+            final Map<String, String> copyMap, ShutdownContext shutdownContext) {
         startWatchScheduler.run();
         return new ChangeEventHandler(hotDeploymentEventHandlerRegister, webResourcesDirectory,
-                webResources,
-                shutdownContext);
+                webResources, copyMap, shutdownContext);
     }
 
     public static void setHotDeploymentEventHandlerRegister(

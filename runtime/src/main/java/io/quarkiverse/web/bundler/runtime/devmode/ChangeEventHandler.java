@@ -4,12 +4,14 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 import org.jboss.logging.Logger;
 
@@ -29,15 +31,17 @@ public class ChangeEventHandler implements Handler<RoutingContext> {
     private static final List<String> IGNORED_SUFFIX = List.of(".map");
     public static final String MEDIA_TYPE_TEXT_EVENT_STREAM = "text/event-stream";
     private final Map<String, Long> lastModifiedMap;
+    private final Map<Path, Path> copyMap;
     private final List<Connection> connections = new CopyOnWriteArrayList<>();
     private final ClassLoader cl;
     private final Path directory;
     private final Runnable unRegisterChangeListener;
 
     public ChangeEventHandler(Function<Consumer<Set<String>>, Runnable> registerHandler, String directory,
-            Set<String> webResources, ShutdownContext shutdownContext) {
+            Set<String> webResources, Map<String, String> copyMap, ShutdownContext shutdownContext) {
         this.directory = Path.of(directory);
         this.lastModifiedMap = initLastModifiedMap(webResources);
+        this.copyMap = prepareCopyMap(copyMap);
         this.cl = Thread.currentThread().getContextClassLoader();
         this.unRegisterChangeListener = registerHandler.apply(this::onChange);
         shutdownContext.addShutdownTask(this::onShutdown);
@@ -76,9 +80,26 @@ public class ChangeEventHandler implements Handler<RoutingContext> {
         return new ConcurrentHashMap<>(map);
     }
 
+    private Map<Path, Path> prepareCopyMap(Map<String, String> copyMap) {
+        return copyMap.entrySet().stream()
+                .collect(Collectors.toMap(e -> Path.of(e.getKey()), e -> Path.of(e.getValue())));
+    }
+
     private void onChange(Set<String> srcChanges) {
         final boolean isBundlingError = srcChanges.contains("web-bundler/build-error");
         if (!srcChanges.contains("web-bundler/build-success") && !isBundlingError) {
+            for (String srcChange : srcChanges) {
+                copyMap.keySet().stream().filter(src -> src.endsWith(srcChange)).findAny()
+                        .ifPresent(src -> {
+                            try {
+                                Files.copy(src, copyMap.get(src),
+                                        StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
+                            } catch (IOException e) {
+                                throw new UncheckedIOException(e);
+                            }
+                        });
+            }
+
             return;
         }
         final ClassLoader oldCl = Thread.currentThread().getContextClassLoader();

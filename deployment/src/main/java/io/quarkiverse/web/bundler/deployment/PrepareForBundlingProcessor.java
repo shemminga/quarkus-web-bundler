@@ -201,9 +201,11 @@ public class PrepareForBundlingProcessor {
                                         .setLocation(webAsset.resourceName())
                                         .build());
                                 if (webAsset.srcFilePath().isPresent()) {
-                                    Files.createSymbolicLink(scriptPath, webAsset.srcFilePath().get());
+                                    Files.copy(webAsset.srcFilePath().get(), scriptPath, StandardCopyOption.REPLACE_EXISTING,
+                                            StandardCopyOption.COPY_ATTRIBUTES);
                                 } else {
-                                    Files.createSymbolicLink(scriptPath, webAsset.filePath().orElseThrow());
+                                    Files.copy(webAsset.filePath().orElseThrow(), scriptPath,
+                                            StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.COPY_ATTRIBUTES);
                                 }
                             } else {
                                 Files.copy(webAsset.filePath().orElseThrow(), scriptPath, StandardCopyOption.REPLACE_EXISTING);
